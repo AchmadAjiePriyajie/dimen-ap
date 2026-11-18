@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model UnitKerja {
+  id          Int                @id @default(autoincrement())
+  nama_unit   String
+  tipe        String // COE | OPERASIONAL
+  target_rkap BigInt
+  pegawai     Pegawai[]
+  potensi     PotensiProyek[]
+  proyek      Proyek[]
+  sos_utama   StatementOfShare[] @relation("SosUtama")
+  sos_mitra   StatementOfShare[] @relation("SosMitra")
+}
+
+model Sektor {
+  id          Int             @id @default(autoincrement())
+  nama_sektor String
+  potensi     PotensiProyek[]
+}
+
+model Layanan {
+  id           Int             @id @default(autoincrement())
+  nama_layanan String
+  potensi      PotensiProyek[]
+}
+
+model Pegawai {
+  id                           Int                @id @default(autoincrement())
+  nama                         String
+  jabatan                      String // PM | Inspektor | Kepala Cabang | VP CoE
+  unit_id                      Int
+  unit                         UnitKerja          @relation(fields: [unit_id], references: [id])
+  status_kepegawaian           String // Kontrak/PKWT | Tetap
+  total_nilai_proyek_ditangani BigInt             @default(0)
+  proyek_pm                    Proyek[]
+  tugas                        TugasOperasional[]
+}
+
+model AlatKerja {
+  id        Int                @id @default(autoincrement())
+  nama_alat String
+  kode_aset String             @unique
+  status    String // Tersedia | Digunakan | Kalibrasi
+  tugas     TugasOperasional[]
+}
+
+model PotensiProyek {
+  id                     Int       @id @default(autoincrement())
+  kode_potensi           String    @unique
+  nama_potensi           String
+  klien                  String
+  unit_id                Int
+  unit                   UnitKerja @relation(fields: [unit_id], references: [id])
+  sektor_id              Int
+  sektor                 Sektor    @relation(fields: [sektor_id], references: [id])
+  layanan_id             Int
+  layanan                Layanan   @relation(fields: [layanan_id], references: [id])
+  estimasi_nilai         BigInt
+  estimasi_biaya_operasi BigInt
+  jalur_akuisisi         String // Tender | Surat Penawaran
+  status                 String // Draft | Menunggu Approval Kacab | Disetujui / Siap Tender | Menang / Jadi Proyek | Gugur
+  created_at             DateTime  @default(now())
+  proyek                 Proyek?
+}
+
+model Proyek {
+  id                      Int                @id @default(autoincrement())
+  kode_proyek             String             @unique
+  potensi_id              Int                @unique
+  potensi                 PotensiProyek      @relation(fields: [potensi_id], references: [id])
+  nama_proyek             String
+  klien                   String
+  unit_utama_id           Int
+  unit_utama              UnitKerja          @relation(fields: [unit_utama_id], references: [id])
+  pm_id                   Int
+  pm                      Pegawai            @relation(fields: [pm_id], references: [id])
+  jenis_kontrak           String // Lump Sum | Blanket
+  nilai_kontrak           BigInt
+  persentase_progres      Int                @default(0)
+  potensi_pendapatan_sisa BigInt
+  status_erp              String // Synced to SAP | Synced to Oracle
+  tanggal_mulai           DateTime
+  tanggal_selesai         DateTime
+  sos                     StatementOfShare[]
+  dokumen                 DokumenKeuangan[]
+  tugas                   TugasOperasional[]
+}
+
+model StatementOfShare {
+  id                 Int       @id @default(autoincrement())
+  proyek_id          Int
+  proyek             Proyek    @relation(fields: [proyek_id], references: [id])
+  unit_utama_id      Int
+  unit_utama         UnitKerja @relation("SosUtama", fields: [unit_utama_id], references: [id])
+  unit_mitra_id      Int
+  unit_mitra         UnitKerja @relation("SosMitra", fields: [unit_mitra_id], references: [id])
+  porsi_utama_persen Int
+  porsi_mitra_persen Int
+  tahap_kesepakatan  String // Awal Potensi | Tengah Proyek
+  status_persetujuan String    @default("Pending") // Pending | Disetujui Mitra | Revisi
+  created_at         DateTime  @default(now())
+}
+
+model DokumenKeuangan {
+  id              Int      @id @default(autoincrement())
+  proyek_id       Int
+  proyek          Proyek   @relation(fields: [proyek_id], references: [id])
+  jenis_dokumen   String // RAB | Dropping | BDD | PAD | Invoice
+  nomor_dokumen   String
+  nominal         BigInt
+  keterangan      String   @db.Text
+  status_approval String   @default("Draft") // Draft | Review Kacab | Review VP CoE | Review Cabang Komersial | Review Direksi | Approved Direksi | Ditolak
+  status_lpj      String? // Belum LPJ | Sudah LPJ (khusus Dropping)
+  synced_to_erp   Boolean  @default(false)
+  created_at      DateTime @default(now())
+}
+
+model TugasOperasional {
+  id                   Int        @id @default(autoincrement())
+  proyek_id            Int
+  proyek               Proyek     @relation(fields: [proyek_id], references: [id])
+  nama_tugas           String
+  inspektor_id         Int
+  inspektor            Pegawai    @relation(fields: [inspektor_id], references: [id])
+  alat_id              Int?
+  alat                 AlatKerja? @relation(fields: [alat_id], references: [id])
+  tanggal_mulai        DateTime
+  tanggal_selesai      DateTime
+  bobot_progres        Int
+  status               String     @default("To Do") // To Do | In Progress | Selesai
+  nomor_sertifikat_tic String?
+}
+
+// Log simulasi integrasi lintas sistem (AP <-> SIKOM <-> SAP/Oracle)
+model ErpLog {
+  id         Int      @id @default(autoincrement())
+  sumber     String
+  tujuan     String
+  event      String
+  payload    Json
+  created_at DateTime @default(now())
+}
